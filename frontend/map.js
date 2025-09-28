@@ -131,7 +131,15 @@ async function fetchSheetData() {
         console.log("Parsed CSV data:", data);
         
         if (data && data.length > 0) {
-          eventsData = data;
+          // Filter out rows with missing essential data
+          const validData = data.filter(event => {
+            const lat = parseFloat(event.lat);
+            const lng = parseFloat(event.lng);
+            return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0 && event.location && event.location.trim() !== '';
+          });
+          
+          console.log(`Filtered data: ${validData.length} valid events out of ${data.length} total`);
+          eventsData = validData;
           renderMarkers();
           updateTicker();
           return; // Success! Exit the function
@@ -200,13 +208,23 @@ function renderMarkers() {
   const typeFilter = document.getElementById('typeFilter').value;
   const severityThreshold = parseInt(document.getElementById('severityFilter').value, 10) || 0;
 
+  console.log(`Rendering markers: ${eventsData.length} events, type filter: '${typeFilter}', severity threshold: ${severityThreshold}`);
+
   eventsData.forEach((event) => {
     const lat = parseFloat(event.lat);
     const lng = parseFloat(event.lng);
-    if (!lat || !lng) return;
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+      console.log(`Skipping event due to invalid coordinates:`, event);
+      return;
+    }
     if (typeFilter && event.event_type !== typeFilter) return;
     const severity = parseInt(event.severity_score, 10) || 0;
-    if (severity < severityThreshold) return;
+    if (severity < severityThreshold) {
+      console.log(`Skipping event due to severity filter: ${severity} < ${severityThreshold}`, event);
+      return;
+    }
+    
+    console.log(`Creating marker for:`, event);
     
     // Create a marker with color and size scaled by severity and impact
     const color = getColorForSeverity(severity);
@@ -222,25 +240,37 @@ function renderMarkers() {
     el.style.border = '2px solid rgba(255, 255, 255, 0.8)';
     el.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
     el.style.cursor = 'pointer';
-    el.style.transition = 'transform 0.2s ease';
+    el.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
+    el.style.position = 'relative';
+    el.style.zIndex = '1';
     
     // Add hover effects
     el.addEventListener('mouseenter', () => {
       el.style.transform = 'scale(1.2)';
-      el.style.zIndex = '1000';
+      el.style.zIndex = '999';
+      el.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.4)';
     });
     
     el.addEventListener('mouseleave', () => {
       el.style.transform = 'scale(1)';
-      el.style.zIndex = 'auto';
+      el.style.zIndex = '1';
+      el.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
     });
     
     const marker = new mapboxgl.Marker(el)
       .setLngLat([lng, lat])
       .addTo(map);
-    marker.getElement().addEventListener('click', () => showInfo(event));
+    
+    // Add click event to show info panel
+    marker.getElement().addEventListener('click', (e) => {
+      e.stopPropagation();
+      showInfo(event);
+    });
+    
     markers.push(marker);
   });
+  
+  console.log(`Rendered ${markers.length} markers on the map`);
 }
 
 // Convert severity (0–100) to a color on a red-yellow-green gradient
